@@ -1,34 +1,26 @@
 # name: discourse-ai-translation-filter
-# about: Correction du double échappement (\n et \u003e) dans les traductions
-# version: 0.3
+# about: Corrige l'affichage des \n et \u003e dans les traductions IA
+# version: 0.1
+# authors: JesusBYS
+# url: https://github.com/JesusBYS/discourse-ai-translation-filter
 
 after_initialize do
-  module ::AiTranslationFilter
-    def self.clean_translation(text)
+  module ::DiscourseAiCleaner
+    def self.clean(text)
       return text if text.blank?
 
-      # On utilise une astuce Ruby pour interpréter les séquences d'échappement 
-      # comme le ferait un parseur JSON (gère \n, \u003e, \", etc.)
-      begin
-        # On entoure de guillemets pour simuler une string JSON valide
-        cleaned = JSON.parse("\"#{text}\"")
-        
-        # Si après passage JSON il reste des \u003e textuels (cas rares)
-        cleaned = cleaned.gsub('\u003e', '>') if cleaned.include?('\u003e')
-        
-        cleaned
-      rescue JSON::ParserError
-        # Si le parsing échoue, on se rabat sur un gsub manuel robuste
-        text.gsub('\\n', "\n")
-            .gsub('\n', "\n")
-            .gsub('\u003e', '>')
-            .gsub('\\u003e', '>')
-      end
+      # Correction des doubles échappements (ex: \\n devient un vrai saut de ligne)
+      # Et remplacement de l'entité unicode \u003e par le chevron >
+      text.gsub('\\n', "\n")
+          .gsub('\n', "\n")
+          .gsub('\\u003e', '>')
+          .gsub('\u003e', '>')
     end
   end
 
-  reloadable_patch do
-    if defined?(DiscourseAi::Translator::LlmTranslator)
+  # On "patch" le traducteur LLM de Discourse AI
+  if defined?(DiscourseAi::Translator::LlmTranslator)
+    reloadable_patch do
       DiscourseAi::Translator::LlmTranslator.class_eval do
         alias_method :old_translate, :translate
 
@@ -36,8 +28,7 @@ after_initialize do
           result = old_translate(post, target_lang)
           
           if result && result[:translation]
-            # On nettoie la chaîne avant qu'elle ne soit renvoyée à Discourse
-            result[:translation] = ::AiTranslationFilter.clean_translation(result[:translation])
+            result[:translation] = ::DiscourseAiCleaner.clean(result[:translation])
           end
           
           result
